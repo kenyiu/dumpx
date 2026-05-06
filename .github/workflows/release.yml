@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            archive: tar.gz
+            binary: dumpx
+          - os: macos-latest
+            archive: tar.gz
+            binary: dumpx
+          - os: windows-latest
+            archive: zip
+            binary: dumpx.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --all-features
+
+      - name: Build release
+        run: cargo build --release --all-features
+
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="dumpx-${GITHUB_REF_NAME}-${RUNNER_OS}-${RUNNER_ARCH}"
+          mkdir -p "dist/${asset}"
+          cp "target/release/${{ matrix.binary }}" "dist/${asset}/"
+          cp README.md LICENSE "dist/${asset}/"
+          tar -C dist -czf "${asset}.tar.gz" "${asset}"
+          echo "ASSET=${asset}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $asset = "dumpx-$env:GITHUB_REF_NAME-$env:RUNNER_OS-$env:RUNNER_ARCH"
+          New-Item -ItemType Directory -Path "dist/$asset" | Out-Null
+          Copy-Item "target/release/${{ matrix.binary }}" "dist/$asset/"
+          Copy-Item README.md, LICENSE "dist/$asset/"
+          Compress-Archive -Path "dist/$asset" -DestinationPath "$asset.zip"
+          "ASSET=$asset.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          generate_release_notes: true
