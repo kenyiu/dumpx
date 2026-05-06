@@ -1,5 +1,8 @@
 # dumpx
 
+<img width="2172" height="724" alt="dumpx-banner-min" src="https://github.com/user-attachments/assets/d851d668-1867-4ac4-a004-d77be1fd0995" />
+
+
 Generate sample files in multiple formats and target sizes. `dumpx` is a Rust
 binary with human-readable and agent-friendly output.
 
