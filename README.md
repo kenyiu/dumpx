@@ -60,6 +60,24 @@ dumpx csv 10MB .
 dumpx 100MB csv
 ```
 
+Use a custom file name for a single generated file:
+
+```sh
+dumpx csv 10MB --name users.csv
+```
+
+Use a custom file-name template for multi-format or multi-size runs:
+
+```sh
+dumpx csv,json 1MiB,2MiB --name "{format}-{size}.{extension}"
+```
+
+`--name` accepts `{prefix}`, `{format}`, `{size}`, `{extension}`, and `{index}`.
+It names files inside the output directory only, so path separators such as `/`
+and `\` are rejected. If a custom name would produce the same output path for
+more than one generated file, the run is rejected; add `{format}`, `{size}`, or
+`{index}` to make names unique.
+
 Generate only selected formats:
 
 ```sh
@@ -95,27 +113,70 @@ dumpx jsonl 1MiB --template '{"id":{{id}},"name":"{{name}}","email":"{{email}}"}
 dumpx txt 1MiB --template-file row-template.txt
 ```
 
-Supported template placeholders use `{{name}}` syntax. Common placeholders:
+Supported template placeholders use `{{name}}` syntax.
+
+Template placeholder reference:
 
 ```text
-id, row, bool, number, digit, number_format, ssn
+Core:
+id, row, bool, boolean, number, digit, number_format, ssn
+
+UUID:
 uuid, uuid_v1, uuid_v3, uuid_v4, uuid_v5, uuid_v6, uuid_v7, uuid_v8
-name, name_with_title, first_name, last_name, title, prefix, suffix
-email, safe_email, free_email, email_provider, domain_suffix, username, password
-ipv4, ipv6, ip, mac, mac_address, user_agent
-company, company_name, company_suffix, buzzword, catch_phrase, bs, profession, industry
+
+Name:
+name, name_with_title, first_name, last_name, title, name_title, prefix, suffix,
+name_suffix
+
+Internet:
+email, safe_email, free_email, email_provider, free_email_provider,
+domain_suffix, username, password, ipv4, ipv6, ip, mac, mac_address, user_agent
+
+Company:
+company, company_name, company_suffix, buzzword, buzzword_middle, buzzword_tail,
+catch_phrase, bs, bs_verb, bs_adj, bs_noun, profession, industry
+
+Job:
 job, job_title, seniority, field, job_field, position, job_position
+
+Phone:
 phone, phone_number, cell, cell_phone, cell_number
-city, country, country_code, street, street_name, state, state_abbr, zip, postcode
-building_number, latitude, longitude, geohash, timezone
+
+Address:
+city_prefix, city_suffix, city, country, country_code, street_suffix, street,
+street_name, timezone, time_zone, state, state_name, state_abbr,
+secondary_address_type, secondary_address, zip, zip_code, postcode, post_code,
+building_number, latitude, longitude, geohash
+
+Lorem:
 word, words, sentence, sentences, paragraph, paragraphs
-markdown_italic, markdown_bold, markdown_link, markdown_bullets, markdown_items
-markdown_quote, markdown_multiline_quote, markdown_code
-isbn, isbn10, isbn13, credit_card, currency_code, currency_name, currency_symbol, bic, isin
-file_path, file_name, file_extension, dir_path, mime_type, semver
-image_url, image_seed_url, image_grayscale_url, image_blur_url
+
+Markdown:
+markdown_italic, italic_word, markdown_bold, bold_word, markdown_link,
+markdown_bullets, bullet_points, markdown_items, list_items, markdown_quote,
+blockquote, markdown_multiline_quote, markdown_code, code
+
+Barcode, finance, and currency:
+isbn, isbn10, isbn_10, isbn13, isbn_13, credit_card, credit_card_number,
+currency_code, currency_name, currency_symbol, bic, isin
+
+Filesystem:
+file_path, file_name, file_extension, dir_path, mime_type, semver,
+semver_stable, semver_unstable
+
+Image URLs:
+image_url, picsum, image_seed_url, picsum_seed, image_grayscale_url,
+picsum_grayscale, image_blur_url, picsum_blur
+
+Color:
 hex_color, rgb_color, rgba_color, hsl_color, hsla_color, color
-http_status, valid_http_status, date, time, datetime, time_date, time_time, time_datetime
+
+HTTP:
+http_status, rfc_http_status, valid_http_status
+
+Date and time:
+date, chrono_date, time, chrono_time, datetime, chrono_datetime, time_date,
+time_time, time_datetime
 ```
 
 Build the binary:

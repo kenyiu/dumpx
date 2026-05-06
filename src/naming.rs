@@ -57,6 +57,29 @@ pub fn file_stem_prefix(prefix: &str, tags: &[Tag]) -> Result<String> {
     Ok(parts.join("_"))
 }
 
+pub fn generated_file_name(
+    template: Option<&str>,
+    prefix: &str,
+    format: &str,
+    size: &str,
+    extension: &str,
+    index: usize,
+) -> Result<String> {
+    let file_name = if let Some(template) = template {
+        template
+            .replace("{prefix}", prefix)
+            .replace("{format}", format)
+            .replace("{size}", size)
+            .replace("{extension}", extension)
+            .replace("{index}", &index.to_string())
+    } else {
+        format!("{prefix}_{size}.{extension}")
+    };
+
+    validate_file_name(&file_name)?;
+    Ok(file_name)
+}
+
 pub fn tags_text(tags: &[Tag]) -> String {
     if tags.is_empty() {
         return "none".to_string();
@@ -69,6 +92,19 @@ pub fn tags_text(tags: &[Tag]) -> String {
 
 pub fn tags_json(tags: &[Tag]) -> Result<String> {
     Ok(serde_json::to_string(tags)?)
+}
+
+fn validate_file_name(file_name: &str) -> Result<()> {
+    if file_name.trim().is_empty() {
+        return Err(anyhow!("custom file name must not be empty"));
+    }
+    if file_name == "." || file_name == ".." {
+        return Err(anyhow!("custom file name must name a file"));
+    }
+    if file_name.contains('/') || file_name.contains('\\') {
+        return Err(anyhow!("custom file name must not contain path separators"));
+    }
+    Ok(())
 }
 
 fn sanitize_file_part(input: &str) -> String {
@@ -113,6 +149,34 @@ mod tests {
         assert_eq!(
             file_stem_prefix("sample files", &tags).unwrap(),
             "sample-files_suite-smoke-test_owner-agent"
+        );
+    }
+
+    #[test]
+    fn renders_generated_file_name_templates() {
+        assert_eq!(
+            generated_file_name(
+                Some("{format}-{size}.{extension}"),
+                "sample",
+                "csv",
+                "1KiB",
+                "csv",
+                2
+            )
+            .unwrap(),
+            "csv-1KiB.csv"
+        );
+        assert_eq!(
+            generated_file_name(None, "sample", "txt", "1KiB", "txt", 1).unwrap(),
+            "sample_1KiB.txt"
+        );
+    }
+
+    #[test]
+    fn rejects_path_like_generated_file_names() {
+        assert!(generated_file_name(Some("../x.txt"), "sample", "txt", "1KiB", "txt", 1).is_err());
+        assert!(
+            generated_file_name(Some("dir\\x.txt"), "sample", "txt", "1KiB", "txt", 1).is_err()
         );
     }
 

@@ -1,5 +1,6 @@
 //! Command-line parsing and orchestration for `dumpx`.
 
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -13,7 +14,7 @@ use crate::formats::{
     default_formats, extension, generate_file, is_supported_format, validate_format,
     DEFAULT_FORMATS,
 };
-use crate::naming::{file_stem_prefix, parse_tags};
+use crate::naming::{file_stem_prefix, generated_file_name, parse_tags};
 use crate::output::{
     emit_error_report, emit_file_report, emit_summary_report, GeneratedFile, OutputMode, RunReport,
 };
@@ -32,6 +33,7 @@ const DEFAULT_MAX_FILES: usize = 100;
   dumpx --size 10KiB --format csv,jsonl --tag suite=smoke
   dumpx csv,json 100MB
   dumpx csv 10MB .
+  dumpx csv 10MB --name users.csv
   dumpx 100MB csv
   dumpx --out-dir fixtures --size 1MiB,10MiB --format parquet,png --output json
   dumpx --json -s 100KiB -f txt -t run=ci
@@ -73,6 +75,10 @@ struct Args {
     /// Prefix used in generated file names.
     #[arg(long, default_value = "sample")]
     prefix: String,
+
+    /// Custom output file name or file-name template. Supports {prefix}, {format}, {size}, {extension}, and {index}.
+    #[arg(long, visible_alias = "filename")]
+    name: Option<String>,
 
     /// Row/item template for csv, json, jsonl, txt, md, and pdf.
     #[arg(long)]
@@ -192,30 +198,42 @@ fn run(args: Args) -> Result<()> {
         .with_context(|| format!("failed to create {}", out_dir.display()))?;
 
     let mut generated_files = Vec::new();
+    let mut seen_paths = HashSet::new();
+    let mut file_index = 1usize;
     for format in formats {
         let format = format.to_ascii_lowercase();
         validate_format(&format)?;
 
         for target_size in &sizes {
-            let file_name = format!(
-                "{}_{}.{}",
-                file_stem_prefix,
-                size_label(*target_size),
-                extension(&format)
-            );
+            let requested_size_label = size_label(*target_size);
+            let file_name = generated_file_name(
+                args.name.as_deref(),
+                &file_stem_prefix,
+                &format,
+                &requested_size_label,
+                extension(&format),
+                file_index,
+            )?;
             let path = out_dir.join(file_name);
+            if !seen_paths.insert(path.clone()) {
+                return Err(anyhow!(
+                    "custom file name produced duplicate output path {}; include {{format}}, {{size}}, or {{index}} in --name",
+                    path.display()
+                ));
+            }
             generate_file(&format, *target_size, &path, &tags, &templates, args.force)?;
             let actual_size = fs::metadata(&path)?.len();
             let generated = GeneratedFile {
                 format: format.clone(),
                 requested_size: *target_size,
-                requested_size_label: size_label(*target_size),
+                requested_size_label,
                 actual_size,
                 path: path.display().to_string(),
                 tags: tags.clone(),
             };
             emit_file_report(output_mode, quiet, &generated)?;
             generated_files.push(generated);
+            file_index += 1;
         }
     }
 
@@ -246,6 +264,7 @@ fn prompt_args() -> Result<Args> {
         formats: Some(formats),
         tags,
         prefix,
+        name: None,
         template: None,
         template_file: None,
         template_header: None,

@@ -190,6 +190,96 @@ fn positional_output_dir_is_supported() {
 }
 
 #[test]
+fn custom_file_name_is_supported_for_single_output() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "csv",
+            "1KiB",
+            temp_dir.path().to_str().unwrap(),
+            "--name",
+            "users.csv",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let path = report["files"][0]["path"].as_str().unwrap();
+    assert!(path.ends_with("users.csv"));
+    assert!(temp_dir.path().join("users.csv").exists());
+}
+
+#[test]
+fn custom_file_name_template_is_supported_for_multiple_outputs() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "csv,json",
+            "1KiB,2KiB",
+            temp_dir.path().to_str().unwrap(),
+            "--name",
+            "{format}-{size}.{extension}",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["count"], 4);
+    assert!(temp_dir.path().join("csv-1KiB.csv").exists());
+    assert!(temp_dir.path().join("csv-2KiB.csv").exists());
+    assert!(temp_dir.path().join("json-1KiB.json").exists());
+    assert!(temp_dir.path().join("json-2KiB.json").exists());
+}
+
+#[test]
+fn duplicate_custom_file_names_are_rejected() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "csv,json",
+            "1KiB",
+            temp_dir.path().to_str().unwrap(),
+            "--name",
+            "fixture.dat",
+        ])
+        .assert()
+        .failure()
+        .stdout(contains("custom file name produced duplicate output path"));
+}
+
+#[test]
+fn custom_file_name_cannot_escape_output_dir() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "txt",
+            "1KiB",
+            temp_dir.path().to_str().unwrap(),
+            "--name",
+            "../escape.txt",
+        ])
+        .assert()
+        .failure()
+        .stdout(contains(
+            "custom file name must not contain path separators",
+        ));
+}
+
+#[test]
 fn default_output_dir_is_current_directory() {
     let temp_dir = tempfile::tempdir().unwrap();
     let output = Command::cargo_bin("dumpx")
