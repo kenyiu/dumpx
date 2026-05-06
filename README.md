@@ -37,48 +37,51 @@ cargo uninstall dumpx
 
 ## Usage
 
+After installation, run `dumpx` directly:
+
 Run without arguments to use the interactive prompt:
 
 ```sh
-cargo run
+dumpx
 ```
 
 ```sh
-cargo run -- --size 10KiB,100KiB,1MiB
+dumpx --size 10KiB,100KiB,1MiB
 ```
 
 Short positional form:
 
 ```sh
-cargo run -- csv 100MB
-cargo run -- csv,json 100MB
-cargo run -- csv,json 100MB,2MB
-cargo run -- csv 10MB .
-cargo run -- 100MB csv
+dumpx csv 10MB
+dumpx csv 100MB
+dumpx csv,json 100MB
+dumpx csv,json 100MB,2MB
+dumpx csv 10MB .
+dumpx 100MB csv
 ```
 
 Generate only selected formats:
 
 ```sh
-cargo run -- --format csv,parquet,jsonl,png --size 1MiB,10MiB
+dumpx --format csv,parquet,jsonl,png --size 1MiB,10MiB
 ```
 
 Attach tags to filenames, file contents, and stdout reports:
 
 ```sh
-cargo run -- --size 100KiB --format csv,jsonl --tag suite=smoke --tag owner=agent
+dumpx --size 100KiB --format csv,jsonl --tag suite=smoke --tag owner=agent
 ```
 
 Agent-friendly output:
 
 ```sh
-cargo run -- --json -s 100KiB -f txt -t run=ci
+dumpx --json -s 100KiB -f txt -t run=ci
 ```
 
 Machine-readable summary JSON:
 
 ```sh
-cargo run -- --output json --size 1MiB --format parquet,png
+dumpx --output json --size 1MiB --format parquet,png
 ```
 
 `--json` is shorthand for the more explicit `--quiet --output json`.
@@ -87,9 +90,9 @@ Template-driven fake data is supported for `csv`, `json`, `jsonl`, `txt`, `md`,
 and `pdf`:
 
 ```sh
-cargo run -- csv 1MiB --template-header "id,name,email" --template "{{id}},{{name}},{{email}}"
-cargo run -- jsonl 1MiB --template '{"id":{{id}},"name":"{{name}}","email":"{{email}}"}'
-cargo run -- txt 1MiB --template-file row-template.txt
+dumpx csv 1MiB --template-header "id,name,email" --template "{{id}},{{name}},{{email}}"
+dumpx jsonl 1MiB --template '{"id":{{id}},"name":"{{name}}","email":"{{email}}"}'
+dumpx txt 1MiB --template-file row-template.txt
 ```
 
 Supported template placeholders use `{{name}}` syntax. Common placeholders:
@@ -122,15 +125,21 @@ cargo build --release
 ./target/release/dumpx --help
 ```
 
+During local development, prefix examples with `cargo run --`, for example:
+
+```sh
+cargo run -- csv 10MB
+```
+
 Safety defaults:
 
 ```sh
 # Existing files are refused by default.
-cargo run -- txt 1MiB
-cargo run -- txt 1MiB --force
+dumpx txt 1MiB
+dumpx txt 1MiB --force
 
 # Each file is capped at 1GiB unless explicitly allowed.
-cargo run -- txt 2GiB --allow-large
+dumpx txt 2GiB --allow-large
 ```
 
 Supported formats:
