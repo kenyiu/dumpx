@@ -106,6 +106,15 @@ dumpx --output json --size 1MiB --format parquet,png
 ```
 
 `--json` is shorthand for the more explicit `--quiet --output json`.
+Summary reports include `planned_count` for the number of files requested and
+`count` for the number generated.
+
+Generate multiple files for each requested format and size pair:
+
+```sh
+dumpx csv 10MB --number-of-files=3
+dumpx csv,json 1MiB,2MiB --number-of-files=2
+```
 
 Template-driven fake data is supported for `csv`, `json`, `jsonl`, `txt`, `md`,
 and `pdf`:

@@ -21,8 +21,6 @@ use crate::output::{
 use crate::size::{default_sizes, parse_size, size_label, DEFAULT_MAX_SIZE};
 use crate::template::{Template, TemplateOptions};
 
-const DEFAULT_MAX_FILES: usize = 100;
-
 #[derive(Parser, Debug)]
 #[command(
     name = "dumpx",
@@ -36,6 +34,7 @@ const DEFAULT_MAX_FILES: usize = 100;
   dumpx csv 10MB --name users.csv
   dumpx 100MB csv
   dumpx --out-dir fixtures --size 1MiB,10MiB --format parquet,png --output json
+  dumpx csv 10MB --number-of-files=3
   dumpx --json -s 100KiB -f txt -t run=ci
 
 For agents, prefer:
@@ -44,7 +43,7 @@ For agents, prefer:
 Readable equivalent:
   dumpx --quiet --output json --size 100KiB --format txt --tag run=ci
 
-By default dumpx refuses to overwrite files and caps each file at 1GiB and each run at 100 files. Use --force and --allow-large when you intentionally need those behaviors.
+By default dumpx refuses to overwrite files and caps each file at 1GiB. Use --force and --allow-large when you intentionally need those behaviors.
 
 Beta release: use with caution.
 
@@ -100,10 +99,6 @@ struct Args {
     #[arg(long)]
     allow_large: bool,
 
-    /// Maximum number of files to generate in one run.
-    #[arg(long, default_value_t = DEFAULT_MAX_FILES)]
-    max_files: usize,
-
     /// Output style written to stdout.
     #[arg(long = "output", visible_alias = "report", value_enum, default_value_t = OutputMode::Text)]
     output: OutputMode,
@@ -115,6 +110,10 @@ struct Args {
     /// Compact shorthand for --quiet --output json.
     #[arg(long)]
     json: bool,
+
+    /// Number of files to generate for each format and size pair.
+    #[arg(long, default_value_t = 1)]
+    number_of_files: usize,
 
     /// Deprecated shorthand for --quiet --output json.
     #[arg(long)]
@@ -184,14 +183,20 @@ fn run(args: Args) -> Result<()> {
     let out_dir = positional_out_dir.unwrap_or_else(|| args.out_dir.clone());
     let output_mode = args.output_mode();
     let quiet = args.quiet();
-    let templates = load_templates(&args)?;
-    let size_inputs = merge_or_default(args.sizes, positional_sizes, default_sizes());
+    let size_inputs = merge_or_default(args.sizes.clone(), positional_sizes, default_sizes());
     let sizes = size_inputs
         .iter()
         .map(|size| parse_size(size))
         .collect::<Result<Vec<_>>>()?;
-    let formats = merge_or_default(args.formats, positional_formats, default_formats());
-    validate_generation_limits(&sizes, formats.len(), args.allow_large, args.max_files)?;
+    let formats = merge_or_default(args.formats.clone(), positional_formats, default_formats());
+    validate_formats(&formats)?;
+    let planned_count = validate_generation_limits(
+        &sizes,
+        formats.len(),
+        args.number_of_files,
+        args.allow_large,
+    )?;
+    let templates = load_templates(&args)?;
     let file_stem_prefix = file_stem_prefix(&args.prefix, &tags)?;
 
     fs::create_dir_all(&out_dir)
@@ -205,35 +210,43 @@ fn run(args: Args) -> Result<()> {
         validate_format(&format)?;
 
         for target_size in &sizes {
-            let requested_size_label = size_label(*target_size);
-            let file_name = generated_file_name(
-                args.name.as_deref(),
-                &file_stem_prefix,
-                &format,
-                &requested_size_label,
-                extension(&format),
-                file_index,
-            )?;
-            let path = out_dir.join(file_name);
-            if !seen_paths.insert(path.clone()) {
-                return Err(anyhow!(
-                    "custom file name produced duplicate output path {}; include {{format}}, {{size}}, or {{index}} in --name",
-                    path.display()
-                ));
+            for _ in 0..args.number_of_files {
+                let requested_size_label = size_label(*target_size);
+                let default_multi_name = args.name.is_none() && args.number_of_files > 1;
+                let name_template = if default_multi_name {
+                    Some("{prefix}_{size}_{index}.{extension}")
+                } else {
+                    args.name.as_deref()
+                };
+                let file_name = generated_file_name(
+                    name_template,
+                    &file_stem_prefix,
+                    &format,
+                    &requested_size_label,
+                    extension(&format),
+                    file_index,
+                )?;
+                let path = out_dir.join(file_name);
+                if !seen_paths.insert(path.clone()) {
+                    return Err(anyhow!(
+                        "custom file name produced duplicate output path {}; include {{format}}, {{size}}, or {{index}} in --name",
+                        path.display()
+                    ));
+                }
+                generate_file(&format, *target_size, &path, &tags, &templates, args.force)?;
+                let actual_size = fs::metadata(&path)?.len();
+                let generated = GeneratedFile {
+                    format: format.clone(),
+                    requested_size: *target_size,
+                    requested_size_label,
+                    actual_size,
+                    path: path.display().to_string(),
+                    tags: tags.clone(),
+                };
+                emit_file_report(output_mode, quiet, &generated)?;
+                generated_files.push(generated);
+                file_index += 1;
             }
-            generate_file(&format, *target_size, &path, &tags, &templates, args.force)?;
-            let actual_size = fs::metadata(&path)?.len();
-            let generated = GeneratedFile {
-                format: format.clone(),
-                requested_size: *target_size,
-                requested_size_label,
-                actual_size,
-                path: path.display().to_string(),
-                tags: tags.clone(),
-            };
-            emit_file_report(output_mode, quiet, &generated)?;
-            generated_files.push(generated);
-            file_index += 1;
         }
     }
 
@@ -241,6 +254,7 @@ fn run(args: Args) -> Result<()> {
         r#type: "summary",
         ok: true,
         out_dir: out_dir.display().to_string(),
+        planned_count,
         count: generated_files.len(),
         files: generated_files,
     };
@@ -270,10 +284,10 @@ fn prompt_args() -> Result<Args> {
         template_header: None,
         force: false,
         allow_large: false,
-        max_files: DEFAULT_MAX_FILES,
         output,
         quiet: false,
         json: false,
+        number_of_files: 1,
         agent: false,
         list_formats: false,
         items: Vec::new(),
@@ -364,24 +378,27 @@ fn merge_or_default(
     }
 }
 
+fn validate_formats(formats: &[String]) -> Result<()> {
+    for format in formats {
+        validate_format(&format.to_ascii_lowercase())?;
+    }
+    Ok(())
+}
+
 fn validate_generation_limits(
     sizes: &[u64],
     format_count: usize,
+    number_of_files: usize,
     allow_large: bool,
-    max_files: usize,
-) -> Result<()> {
-    if max_files == 0 {
-        return Err(anyhow!("--max-files must be greater than zero"));
+) -> Result<usize> {
+    if number_of_files == 0 {
+        return Err(anyhow!("--number-of-files must be greater than zero"));
     }
     let file_count = sizes
         .len()
         .checked_mul(format_count)
+        .and_then(|count| count.checked_mul(number_of_files))
         .ok_or_else(|| anyhow!("requested file count overflowed"))?;
-    if file_count > max_files {
-        return Err(anyhow!(
-            "requested {file_count} files, which exceeds --max-files {max_files}"
-        ));
-    }
     if !allow_large {
         for size in sizes {
             if *size > DEFAULT_MAX_SIZE {
@@ -393,7 +410,7 @@ fn validate_generation_limits(
             }
         }
     }
-    Ok(())
+    Ok(file_count)
 }
 
 fn load_templates(args: &Args) -> Result<TemplateOptions> {
