@@ -1,6 +1,6 @@
 # dumpx
 
-<img width="2172" height="724" alt="dumpx-banner-min" src="https://github.com/user-attachments/assets/d851d668-1867-4ac4-a004-d77be1fd0995" />
+<img width="2172" height="724" alt="dumpx-banner-v2-minimized" src="https://github.com/user-attachments/assets/ab2dbadf-717c-4d5a-91ed-be830f12caee" />
 
 
 Generate sample files in multiple formats and target sizes. `dumpx` is a Rust
