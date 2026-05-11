@@ -14,6 +14,7 @@ fn help_mentions_tags_and_agent_output() {
         .stdout(contains("--quiet"))
         .stdout(contains("--output"))
         .stdout(contains("--json"))
+        .stdout(contains("--number-of-files"))
         .stdout(contains("For agents"));
 }
 
@@ -54,6 +55,7 @@ fn generates_tagged_files_with_json_report() {
 
     let report: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(report["ok"], true);
+    assert_eq!(report["planned_count"], 2);
     assert_eq!(report["count"], 2);
 
     let files = report["files"].as_array().unwrap();
@@ -64,6 +66,119 @@ fn generates_tagged_files_with_json_report() {
         assert_eq!(file["tags"][0]["key"], "suite");
         assert_eq!(file["tags"][0]["value"], "smoke");
     }
+}
+
+#[test]
+fn json_report_includes_planned_file_count() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "csv,json",
+            "1KiB,2KiB",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["planned_count"], 4);
+    assert_eq!(report["count"], 4);
+    assert_eq!(report["files"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn number_of_files_generates_multiple_files_for_each_format_size_pair() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "--number-of-files=3",
+            "csv",
+            "1KiB",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["planned_count"], 3);
+    assert_eq!(report["count"], 3);
+    let files = report["files"].as_array().unwrap();
+    assert_eq!(files.len(), 3);
+    for file in files {
+        assert_eq!(file["format"], "csv");
+        assert_eq!(file["requested_size"], 1024);
+        let path = file["path"].as_str().unwrap();
+        assert!(std::fs::metadata(path).unwrap().len() >= 1024);
+    }
+}
+
+#[test]
+fn number_of_files_multiplies_format_size_pairs() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "--number-of-files",
+            "2",
+            "csv,json",
+            "1KiB,2KiB",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["planned_count"], 8);
+    assert_eq!(report["count"], 8);
+    assert_eq!(report["files"].as_array().unwrap().len(), 8);
+}
+
+#[test]
+fn number_of_files_must_be_greater_than_zero() {
+    Command::cargo_bin("dumpx")
+        .unwrap()
+        .args(["--json", "--number-of-files=0", "csv", "1KiB"])
+        .assert()
+        .failure()
+        .stdout(contains("--number-of-files must be greater than zero"));
+}
+
+#[test]
+fn number_of_files_is_not_capped_by_run_file_count() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("dumpx")
+        .unwrap()
+        .args([
+            "--json",
+            "--number-of-files=101",
+            "txt",
+            "1B",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["planned_count"], 101);
+    assert_eq!(report["count"], 101);
+    assert_eq!(report["files"].as_array().unwrap().len(), 101);
 }
 
 #[test]
@@ -382,17 +497,6 @@ fn rejects_sizes_above_default_limit_without_allow_large() {
         .failure()
         .stdout(contains(r#""ok": false"#))
         .stdout(contains("exceeds default limit"));
-}
-
-#[test]
-fn rejects_runs_above_max_files() {
-    Command::cargo_bin("dumpx")
-        .unwrap()
-        .args(["--json", "--max-files", "1", "csv,json", "1KiB"])
-        .assert()
-        .failure()
-        .stdout(contains(r#""type": "error""#))
-        .stdout(contains("exceeds --max-files"));
 }
 
 #[test]

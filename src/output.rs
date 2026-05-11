@@ -32,6 +32,7 @@ pub struct RunReport {
     pub r#type: &'static str,
     pub ok: bool,
     pub out_dir: String,
+    pub planned_count: usize,
     pub count: usize,
     pub files: Vec<GeneratedFile>,
 }
@@ -68,7 +69,10 @@ pub fn emit_file_report(mode: OutputMode, quiet: bool, file: &GeneratedFile) -> 
 
 pub fn emit_summary_report(mode: OutputMode, report: &RunReport) -> Result<()> {
     match mode {
-        OutputMode::Text => println!("generated {} file(s)", report.count),
+        OutputMode::Text => println!(
+            "generated {} of {} planned file(s)",
+            report.count, report.planned_count
+        ),
         OutputMode::Json => println!("{}", serde_json::to_string_pretty(report)?),
         OutputMode::Jsonl => println!("{}", serde_json::to_string(report)?),
     }
